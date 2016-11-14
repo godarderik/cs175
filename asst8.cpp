@@ -119,6 +119,44 @@ static shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node
 static shared_ptr<SgRbtNode> g_currentCameraNode;
 static shared_ptr<SgRbtNode> g_currentPickedRbtNode;
 
+static RigTForm evaluateBezier(RigTForm from, RigTForm to, RigTForm d, RigTForm e, double alpha){
+    Cvec3 f_t = lerp(from.getTranslation(),d.getTranslation(), alpha);
+    Cvec3 g_t = lerp(d.getTranslation(), e.getTranslation(), alpha);
+    Cvec3 h_t = lerp(e.getTranslation(), to.getTranslation(), alpha);
+    Cvec3 m_t = lerp(f_t, g_t, alpha);
+    Cvec3 n_t = lerp(g_t, h_t, alpha);
+    Cvec3 c_t = lerp(m_t, n_t, alpha);
+    
+    Quat f_q = slerp(from.getRotation(), d.getRotation(), alpha);
+    Quat g_q = slerp(d.getRotation(), e.getRotation(), alpha);
+    Quat h_q = slerp(e.getRotation(), to.getRotation(), alpha);
+    Quat m_q = slerp(f_q, g_q, alpha);
+    Quat n_q = slerp(g_q, h_q, alpha);
+    Quat c_q = slerp(m_q, n_q, alpha);
+    
+    return RigTForm(c_t, c_q);
+}
+
+static RigTForm evaulateCatmullRom(RigTForm prev, RigTForm from, RigTForm to, RigTForm post, double alpha){
+    Cvec3 BC_CvecD = (to.getTranslation() - prev.getTranslation()) * (1/6) + from.getTranslation();
+    Cvec3 BC_CvecE = (post.getTranslation() - from.getTranslation()) * (-1/6) + to.getTranslation();
+    
+    Quat d_pow = to.getRotation() * inv(prev.getRotation());
+    Quat e_pow = post.getRotation() * inv(from.getRotation());
+    
+    if(d_pow[0] < 0){
+        d_pow = cn(d_pow);
+    }
+    
+    Quat BC_QuatD = pow(d_pow, 1.0/6.0) * from.getRotation();
+    Quat BC_QuatE = pow(e_pow, -1.0/6.0) * to.getRotation();
+    
+    RigTForm BC_D = RigTForm(BC_CvecD, BC_QuatD);
+    RigTForm BC_E = RigTForm(BC_CvecE, BC_QuatE);
+    
+    return evaluateBezier(from, to, BC_D, BC_E, alpha);
+}
+
 class Animator {
 public:
   typedef vector<shared_ptr<SgRbtNode> > SgRbtNodes;
@@ -194,11 +232,13 @@ public:
     const int integralT = int(floor(t));
     const double fraction = t - integralT;
 
-    KeyFrameIter f0 = getNthKeyFrame(integralT), f1 = f0;
+    KeyFrameIter f0 = getNthKeyFrame(integralT), f1 = f0, f_1=f0, f2=f1;
     ++f1;
+    --f_1;
+    ++f2;
 
     for (int i = 0, n = nodes_.size(); i < n; ++i) {
-      nodes_[i]->setRbt(lerp((*f0)[i], (*f1)[i], fraction));
+      nodes_[i]->setRbt(evaulateCatmullRom((*f_1)[i], (*f0)[i], (*f1)[i], (*f2)[i], fraction));
     }
   }
 
