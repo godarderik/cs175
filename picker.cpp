@@ -2,13 +2,14 @@
 # include <GL/glew.h>
 #endif
 
+#include "uniforms.h"
 #include "picker.h"
 
 using namespace std;
 using namespace std::tr1;
 
-Picker::Picker(const RigTForm& initialRbt, const ShaderState& curSS)
-  : drawer_(initialRbt, curSS)
+Picker::Picker(const RigTForm& initialRbt, Uniforms& uniforms)
+  : drawer_(initialRbt, uniforms)
   , idCounter_(0)
   , srgbFrameBuffer_(!g_Gl2Compatible) {}
 
@@ -36,7 +37,7 @@ bool Picker::visit(SgShapeNode& node) {
   // DEBUG OUTPUT
   cerr << idCounter_ << " => " << idColor[0] << ' ' << idColor[1] << ' ' << idColor[2] << endl;
 
-  safe_glUniform3f(drawer_.getCurSS().h_uIdColor, idColor[0], idColor[1], idColor[2]);
+  drawer_.getUniforms().put("uIdColor", idColor);
   return drawer_.visit(node);
 }
 

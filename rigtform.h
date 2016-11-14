@@ -39,17 +39,17 @@ public:
   }
 
   Cvec4 operator * (const Cvec4& a) const {
-    return Cvec4(t_, 0.0) * a[3] + r_ * a;
+    return Cvec4(t_, 1.0) * a[3] + Cvec4(r_ * Cvec3(a));
   }
 
   RigTForm operator * (const RigTForm& a) const {
-    return RigTForm(t_ + Cvec3(r_ * Cvec4(a.t_, 0)), r_*a.r_);
+    return RigTForm(t_ + r_ * a.t_, r_*a.r_);
   }
 };
 
 inline RigTForm inv(const RigTForm& tform) {
   Quat invRot = inv(tform.getRotation());
-  return RigTForm(Cvec3(invRot * Cvec4(-tform.getTranslation(), 1)), invRot);
+  return RigTForm(invRot * (-tform.getTranslation()), invRot);
 }
 
 inline RigTForm transFact(const RigTForm& tform) {
@@ -70,8 +70,8 @@ inline Matrix4 rigTFormToMatrix(const RigTForm& tform) {
 }
 
 inline RigTForm lerp(const RigTForm& tform0, const RigTForm& tform1, double t) {
-  return RigTForm(lerp(tform0.getTranslation(), tform1.getTranslation(), t),
-                  slerp(tform0.getRotation(), tform1.getRotation(), t));
+    return RigTForm(lerp(tform0.getTranslation(), tform1.getTranslation(), t),
+                    slerp(tform0.getRotation(), tform1.getRotation(), t));
 }
 
 #endif

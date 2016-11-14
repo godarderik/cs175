@@ -16,7 +16,9 @@ out vec4 fragColor;
 void main() {
   // TODO: replace the following line with loading of normal from uTexNormal
   //       transforming to eye space, and normalizing
-  vec3 normal = vec3(0, 0, 1);
+
+  vec3 n = ((texture(uTexNormal, vTexCoord)*2) - 1).xyz;
+  vec3 normal = normalize(vNTMat * n);
 
   vec3 viewDir = normalize(-vEyePos);
   vec3 lightDir = normalize(uLight - vEyePos);
