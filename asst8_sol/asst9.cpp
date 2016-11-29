@@ -40,6 +40,7 @@
 #include "asstcommon.h"
 #include "drawer.h"
 #include "picker.h"
+#include "mesh.h"
 
 #define EMBED_SOLUTION_GLSL 1
 
@@ -104,6 +105,24 @@ shared_ptr<Material> g_overridingMaterial;
 
 // --------- Geometry
 typedef SgGeometryShapeNode MyShapeNode;
+
+static shared_ptr<Material> g_bunnyMat; // for the bunny
+
+static vector<shared_ptr<Material> > g_bunnyShellMats; // for bunny shells
+
+// New Geometry
+static const int g_numShells = 24; // constants defining how many layers of shells
+static double g_furHeight = 0.21;
+static double g_hairyness = 0.7;
+
+static shared_ptr<SimpleGeometryPN> g_bunnyGeometry;
+static vector<shared_ptr<SimpleGeometryPNX> > g_bunnyShellGeometries;
+static Mesh g_bunnyMesh;
+
+
+// New Scene node
+static shared_ptr<SgRbtNode> g_bunnyNode;
+
 
 // Vertex buffer and index buffer associated with the ground and cube geometry
 static shared_ptr<Geometry> g_ground, g_cube, g_sphere;
@@ -290,6 +309,24 @@ static void initSphere() {
   vector<unsigned short> idx(ibLen);
   makeSphere(1, 20, 10, vtx.begin(), idx.begin());
   g_sphere.reset(new SimpleIndexedGeometryPNTBX(&vtx[0], &idx[0], vtx.size(), idx.size()));
+}
+
+static void initBunnyMeshes() {
+  g_bunnyMesh.load("bunny.mesh");
+
+  // TODO: Init the per vertex normal of g_bunnyMesh; see "calculating normals"
+  // section of spec
+  // ...
+
+  // TODO: Initialize g_bunnyGeometry from g_bunnyMesh; see "mesh preparation"
+  // section of spec
+  // ...
+
+  // Now allocate array of SimpleGeometryPNX to for shells, one per layer
+  g_bunnyShellGeometries.resize(g_numShells);
+  for (int i = 0; i < g_numShells; ++i) {
+    g_bunnyShellGeometries[i].reset(new SimpleGeometryPNX());
+  }
 }
 
 static void initRobots() {
@@ -962,6 +999,38 @@ static void initMaterials() {
   g_lightMat.reset(new Material(solid));
   g_lightMat->getUniforms().put("uColor", Cvec3f(1, 1, 1));
 
+    g_bunnyMat.reset(new Material("./shaders/basic-gl3.vshader", "./shaders/bunny-gl3.fshader"));
+  g_bunnyMat->getUniforms()
+  .put("uColorAmbient", Cvec3f(0.45f, 0.3f, 0.3f))
+  .put("uColorDiffuse", Cvec3f(0.2f, 0.2f, 0.2f));
+
+  // bunny shell materials;
+  shared_ptr<ImageTexture> shellTexture(new ImageTexture("shell.ppm", false)); // common shell texture
+
+  // needs to enable repeating of texture coordinates
+  shellTexture->bind();
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+
+  // eachy layer of the shell uses a different material, though the materials will share the
+  // same shader files and some common uniforms. hence we create a prototype here, and will
+  // copy from the prototype later
+  Material bunnyShellMatPrototype("./shaders/bunny-shell-gl3.vshader", "./shaders/bunny-shell-gl3.fshader");
+  bunnyShellMatPrototype.getUniforms().put("uTexShell", shellTexture);
+  bunnyShellMatPrototype.getRenderStates()
+  .blendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA) // set blending mode
+  .enable(GL_BLEND) // enable blending
+  .disable(GL_CULL_FACE); // disable culling
+
+  // allocate array of materials
+  g_bunnyShellMats.resize(g_numShells);
+  for (int i = 0; i < g_numShells; ++i) {
+    g_bunnyShellMats[i].reset(new Material(bunnyShellMatPrototype)); // copy from the prototype
+    // but set a different exponent for blending transparency
+    g_bunnyShellMats[i]->getUniforms().put("uAlphaExponent", 2.f + 5.f * float(i + 1)/g_numShells);
+  }
+
   // pick shader
   g_pickingMat.reset(new Material("./shaders/basic-gl3.vshader", "./shaders/pick-gl3.fshader"));
 };
@@ -971,6 +1040,7 @@ static void initGeometry() {
   initCubes();
   initSphere();
   initRobots();
+  initBunnyMeshes();
 }
 
 static void constructRobot(shared_ptr<SgTransformNode> base, shared_ptr<Material> material) {
@@ -1067,12 +1137,27 @@ static void initScene() {
   g_light2->addChild(shared_ptr<MyShapeNode>(
                        new MyShapeNode(g_sphere, g_lightMat, Cvec3(0), Cvec3(0), Cvec3(0.5))));
 
+  g_bunnyNode.reset(new SgRbtNode());
+
+  // add bunny as a shape nodes
+  g_bunnyNode->addChild(shared_ptr<MyShapeNode>(
+                          new MyShapeNode(g_bunnyGeometry, g_bunnyMat)));
+
+  // add each shell as shape node
+  for (int i = 0; i < g_numShells; ++i) {
+    g_bunnyNode->addChild(shared_ptr<MyShapeNode>(
+                            new MyShapeNode(g_bunnyShellGeometries[i], g_bunnyShellMats[i])));
+  }
+  // from this point, calling g_bunnyShellGeometries[i]->upload(...) will change the
+  // geometry of the ith layer of shell that gets drawn
+
   g_world->addChild(g_skyNode);
   g_world->addChild(g_groundNode);
   g_world->addChild(g_robot1Node);
   g_world->addChild(g_robot2Node);
   g_world->addChild(g_light1);
   g_world->addChild(g_light2);
+  g_world->addChild(g_bunnyNode);
 
   g_currentCameraNode = g_skyNode;
 }
