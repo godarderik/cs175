@@ -135,6 +135,16 @@ static shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node
 static shared_ptr<SgRbtNode> g_currentCameraNode;
 static shared_ptr<SgRbtNode> g_currentPickedRbtNode;
 
+static const Cvec3 g_gravity(0, -0.5, 0);  // gavity vector
+static double g_timeStep = 0.02;
+static double g_numStepsPerFrame = 10;
+static double g_damping = 0.96;
+static double g_stiffness = 4;
+static int g_simulationsPerSecond = 60;
+
+static std::vector<Cvec3> g_tipPos,        // should be hair tip pos in world-space coordinates
+                          g_tipVelocity;   // should be hair tip velocity in world-space coordinates
+
 // ---------- Animation
 
 class Animator {
@@ -311,6 +321,8 @@ static void initSphere() {
   g_sphere.reset(new SimpleIndexedGeometryPNTBX(&vtx[0], &idx[0], vtx.size(), idx.size()));
 }
 
+static vector<VertexPN> verts;
+  
 static void initBunnyMeshes() {
   g_bunnyMesh.load("bunny.mesh");
 
@@ -318,9 +330,42 @@ static void initBunnyMeshes() {
   // section of spec
   // ...
 
+
+  for (int i = 0; i < g_bunnyMesh.getNumVertices(); ++i) {
+    const Mesh::Vertex v = g_bunnyMesh.getVertex(i);
+    Mesh::VertexIterator it(v.getIterator()), it0(it);
+    Cvec3 tempNormal = Cvec3(0,0,0);    
+    do { tempNormal += it.getFace().getNormal();}                                        
+    while (++it != it0);                                  // go around once the 1ring
+    v.setNormal(normalize(tempNormal));
+  }
+
   // TODO: Initialize g_bunnyGeometry from g_bunnyMesh; see "mesh preparation"
   // section of spec
   // ...
+
+  verts.reserve(3 * g_bunnyMesh.getNumVertices());
+  g_bunnyGeometry.reset(new SimpleGeometryPN());
+
+  int count = 0;
+
+  for (int i = 0; i < g_bunnyMesh.getNumFaces(); ++i) {
+    const Mesh::Face f = g_bunnyMesh.getFace(i);
+
+    for (int j = 1; j < f.getNumVertices() - 1; ++j) {
+      const VertexPN v1 = VertexPN(f.getVertex(j-1).getPosition(), f.getVertex(j-1).getNormal());
+      const VertexPN v2 = VertexPN(f.getVertex(j).getPosition(), f.getVertex(j).getNormal());
+      const VertexPN v3 = VertexPN(f.getVertex(j+1).getPosition(), f.getVertex(j+1).getNormal());
+      verts.push_back(v1);
+      verts.push_back(v2);
+      verts.push_back(v3);
+
+      count += 3;
+    }
+  }
+
+
+  g_bunnyGeometry->upload(&verts[0], count);
 
   // Now allocate array of SimpleGeometryPNX to for shells, one per layer
   g_bunnyShellGeometries.resize(g_numShells);
@@ -336,6 +381,36 @@ static void initRobots() {
 // takes a projection matrix and send to the the shaders
 static void sendProjectionMatrix(Uniforms& uniforms, const Matrix4& projMatrix) {
   uniforms.put("uProjMatrix", projMatrix);
+}
+
+static void updateShellGeometry() {
+  // TASK 1 and 3 TODO: finish this function as part of Task 1 and Task 3
+}
+
+// New glut timer call back that perform dynamics simulation
+// every g_simulationsPerSecond times per second
+static void hairsSimulationCallback(int dontCare) {
+
+  // TASK 2 TODO: wrte dynamics simulation code here as part of TASK2
+
+  //...
+
+  // schedule this to get called again
+  glutTimerFunc(1000/g_simulationsPerSecond, hairsSimulationCallback, 0);
+  glutPostRedisplay(); // signal redisplaying
+}
+
+// New function that initialize the dynamics simulation
+static void initSimulation() {
+  g_tipPos.resize(g_bunnyMesh.getNumVertices(), Cvec3(0));
+  g_tipVelocity = g_tipPos;
+
+  // TASK 1 TODO: initialize g_tipPos to "at-rest" hair tips in world coordinates
+
+  //...
+
+  // Starts hair tip simulation
+  hairsSimulationCallback(0);
 }
 
 // update g_frustFovY from g_frustMinFov, g_windowWidth, and g_windowHeight
@@ -855,6 +930,28 @@ static void keyboard(const unsigned char key, const int x, const int y) {
   glutPostRedisplay();
 }
 
+static void specialKeyboard(const int key, const int x, const int y) {
+  switch (key) {
+  case GLUT_KEY_RIGHT:
+    g_furHeight *= 1.05;
+    cerr << "fur height = " << g_furHeight << std::endl;
+    break;
+  case GLUT_KEY_LEFT:
+    g_furHeight /= 1.05;
+    std::cerr << "fur height = " << g_furHeight << std::endl;
+    break;
+  case GLUT_KEY_UP:
+    g_hairyness *= 1.05;
+    cerr << "hairyness = " << g_hairyness << std::endl;
+    break;
+  case GLUT_KEY_DOWN:
+    g_hairyness /= 1.05;
+    cerr << "hairyness = " << g_hairyness << std::endl;
+    break;
+  }
+  glutPostRedisplay();
+}
+
 static void initGlutState(int argc, char * argv[]) {
   glutInit(&argc, argv);                                  // initialize Glut based on cmd-line args
 #ifdef __MAC__
@@ -872,6 +969,7 @@ static void initGlutState(int argc, char * argv[]) {
   glutMouseFunc(mouse);                                   // mouse click callback
   glutKeyboardFunc(keyboard);
   glutKeyboardUpFunc(keyboardUp);
+  glutSpecialFunc(specialKeyboard); 
 }
 
 static void initGLState() {
@@ -999,7 +1097,8 @@ static void initMaterials() {
   g_lightMat.reset(new Material(solid));
   g_lightMat->getUniforms().put("uColor", Cvec3f(1, 1, 1));
 
-    g_bunnyMat.reset(new Material("./shaders/basic-gl3.vshader", "./shaders/bunny-gl3.fshader"));
+  
+  g_bunnyMat.reset(new Material("./shaders/basic-gl3.vshader", "./shaders/bunny-gl3.fshader"));
   g_bunnyMat->getUniforms()
   .put("uColorAmbient", Cvec3f(0.45f, 0.3f, 0.3f))
   .put("uColorDiffuse", Cvec3f(0.2f, 0.2f, 0.2f));
@@ -1030,7 +1129,7 @@ static void initMaterials() {
     // but set a different exponent for blending transparency
     g_bunnyShellMats[i]->getUniforms().put("uAlphaExponent", 2.f + 5.f * float(i + 1)/g_numShells);
   }
-
+  
   // pick shader
   g_pickingMat.reset(new Material("./shaders/basic-gl3.vshader", "./shaders/pick-gl3.fshader"));
 };
@@ -1123,8 +1222,8 @@ static void initScene() {
   g_groundNode->addChild(shared_ptr<MyShapeNode>(
                            new MyShapeNode(g_ground, g_bumpFloorMat)));
 
-  g_robot1Node.reset(new SgRbtNode(RigTForm(Cvec3(-2, 1, 0))));
-  g_robot2Node.reset(new SgRbtNode(RigTForm(Cvec3(2, 1, 0))));
+  g_robot1Node.reset(new SgRbtNode(RigTForm(Cvec3(-10, 1, 0))));
+  g_robot2Node.reset(new SgRbtNode(RigTForm(Cvec3(10, 1, 0))));
 
   constructRobot(g_robot1Node, g_redDiffuseMat); // a Red robot
   constructRobot(g_robot2Node, g_blueDiffuseMat); // a Blue robot
@@ -1144,13 +1243,14 @@ static void initScene() {
                           new MyShapeNode(g_bunnyGeometry, g_bunnyMat)));
 
   // add each shell as shape node
-  for (int i = 0; i < g_numShells; ++i) {
-    g_bunnyNode->addChild(shared_ptr<MyShapeNode>(
-                            new MyShapeNode(g_bunnyShellGeometries[i], g_bunnyShellMats[i])));
-  }
+  //for (int i = 0; i < g_numShells; ++i) {
+  //  g_bunnyNode->addChild(shared_ptr<MyShapeNode>(
+  //                          new MyShapeNode(g_bunnyShellGeometries[i], g_bunnyShellMats[i])));
+  //}
   // from this point, calling g_bunnyShellGeometries[i]->upload(...) will change the
   // geometry of the ith layer of shell that gets drawn
 
+  
   g_world->addChild(g_skyNode);
   g_world->addChild(g_groundNode);
   g_world->addChild(g_robot1Node);
@@ -1158,6 +1258,7 @@ static void initScene() {
   g_world->addChild(g_light1);
   g_world->addChild(g_light2);
   g_world->addChild(g_bunnyNode);
+  
 
   g_currentCameraNode = g_skyNode;
 }
@@ -1191,6 +1292,7 @@ int main(int argc, char * argv[]) {
     initGeometry();
     initScene();
     initAnimation();
+    initSimulation();
 
     glutMainLoop();
     return 0;
