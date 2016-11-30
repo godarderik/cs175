@@ -383,17 +383,18 @@ static vector<VertexPNX> vert_vector[g_numShells];
 static void updateShellGeometry() {
   // TASK 1 and 3 TODO: finish this function as part of Task 1 and Task 3
 
-  for (int i = 0; i < g_numShells; ++i) {
+  for (int i = 1; i < g_numShells; ++i) {
     int count = 0;
     vert_vector[i].clear();
     for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
     const Mesh::Face f = g_bunnyMesh.getFace(j);
 
-    vert_vector[i].push_back(VertexPNX(f.getVertex(0).getPosition() + ((g_tipPos[count] - f.getVertex(0).getPosition()) * i ) / g_numShells, f.getVertex(0).getNormal(), Cvec2(0,0)));
+    float factor = (i*(i+1)/2.0)/((g_numShells-1)*(g_numShells)/2.0);
+    vert_vector[i].push_back(VertexPNX(f.getVertex(0).getPosition() + (g_tipPos[count] - f.getVertex(0).getPosition()) * factor, f.getVertex(0).getNormal(), Cvec2(0,0)));
     count += 1;
-    vert_vector[i].push_back(VertexPNX(f.getVertex(1).getPosition() + ((g_tipPos[count] - f.getVertex(1).getPosition()) * i ) / g_numShells, f.getVertex(1).getNormal(), Cvec2(g_hairyness,0)));
+    vert_vector[i].push_back(VertexPNX(f.getVertex(1).getPosition() + (g_tipPos[count] - f.getVertex(1).getPosition()) * factor, f.getVertex(1).getNormal(), Cvec2(g_hairyness,0)));
     count += 1;
-    vert_vector[i].push_back(VertexPNX(f.getVertex(2).getPosition() + ((g_tipPos[count] - f.getVertex(2).getPosition()) * i ) / g_numShells, f.getVertex(2).getNormal(), Cvec2(0,g_hairyness)));
+    vert_vector[i].push_back(VertexPNX(f.getVertex(2).getPosition() + (g_tipPos[count] - f.getVertex(2).getPosition()) * factor, f.getVertex(2).getNormal(), Cvec2(0,g_hairyness)));
     count += 1;
     
   }
