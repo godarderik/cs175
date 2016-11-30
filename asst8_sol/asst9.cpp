@@ -322,7 +322,7 @@ static void initSphere() {
 }
 
 static vector<VertexPN> verts;
-  
+int global_count;
 static void initBunnyMeshes() {
   g_bunnyMesh.load("bunny.mesh");
 
@@ -351,21 +351,16 @@ static void initBunnyMeshes() {
 
   for (int i = 0; i < g_bunnyMesh.getNumFaces(); ++i) {
     const Mesh::Face f = g_bunnyMesh.getFace(i);
-
-    for (int j = 1; j < f.getNumVertices() - 1; ++j) {
-      const VertexPN v1 = VertexPN(f.getVertex(j-1).getPosition(), f.getVertex(j-1).getNormal());
-      const VertexPN v2 = VertexPN(f.getVertex(j).getPosition(), f.getVertex(j).getNormal());
-      const VertexPN v3 = VertexPN(f.getVertex(j+1).getPosition(), f.getVertex(j+1).getNormal());
-      verts.push_back(v1);
-      verts.push_back(v2);
-      verts.push_back(v3);
-
-      count += 3;
-    }
+    
+    verts.push_back(VertexPN(f.getVertex(0).getPosition(), f.getVertex(0).getNormal()));
+    verts.push_back(VertexPN(f.getVertex(1).getPosition(), f.getVertex(1).getNormal()));
+    verts.push_back(VertexPN(f.getVertex(2).getPosition(), f.getVertex(2).getNormal()));
   }
 
+  global_count = count;
 
-  g_bunnyGeometry->upload(&verts[0], count);
+
+  g_bunnyGeometry->upload(&verts[0], 3 * g_bunnyMesh.getNumFaces());
 
   // Now allocate array of SimpleGeometryPNX to for shells, one per layer
   g_bunnyShellGeometries.resize(g_numShells);
@@ -383,8 +378,29 @@ static void sendProjectionMatrix(Uniforms& uniforms, const Matrix4& projMatrix) 
   uniforms.put("uProjMatrix", projMatrix);
 }
 
+static vector<VertexPNX> vert_vector[g_numShells];
+
 static void updateShellGeometry() {
   // TASK 1 and 3 TODO: finish this function as part of Task 1 and Task 3
+
+  for (int i = 0; i < g_numShells; ++i) {
+    int count = 0;
+    vert_vector[i].clear();
+    for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
+    const Mesh::Face f = g_bunnyMesh.getFace(j);
+
+    vert_vector[i].push_back(VertexPNX(f.getVertex(0).getPosition() + ((g_tipPos[count] - f.getVertex(0).getPosition()) * i ) / g_numShells, f.getVertex(0).getNormal(), Cvec2(0,0)));
+    count += 1;
+    vert_vector[i].push_back(VertexPNX(f.getVertex(1).getPosition() + ((g_tipPos[count] - f.getVertex(1).getPosition()) * i ) / g_numShells, f.getVertex(1).getNormal(), Cvec2(g_hairyness,0)));
+    count += 1;
+    vert_vector[i].push_back(VertexPNX(f.getVertex(2).getPosition() + ((g_tipPos[count] - f.getVertex(2).getPosition()) * i ) / g_numShells, f.getVertex(2).getNormal(), Cvec2(0,g_hairyness)));
+    count += 1;
+    
+  }
+  g_bunnyShellGeometries[i]->upload(&vert_vector[i][0], 3 * g_bunnyMesh.getNumFaces());
+}
+  
+
 }
 
 // New glut timer call back that perform dynamics simulation
@@ -393,7 +409,25 @@ static void hairsSimulationCallback(int dontCare) {
 
   // TASK 2 TODO: wrte dynamics simulation code here as part of TASK2
 
-  //...
+  int count = 0;
+  for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
+    const Mesh::Face f = g_bunnyMesh.getFace(j);
+    for (int k = 0; k < 3; ++k) {
+      Cvec3 pos = f.getVertex(k).getPosition();
+      Cvec3 s = pos + (f.getVertex(k).getNormal() * g_furHeight);
+
+      Cvec3 spring_force = (s - g_tipPos[count]) * g_stiffness;
+      Cvec3 total_force = g_gravity + spring_force;
+
+      g_tipPos[count] += g_tipVelocity[count] * g_timeStep;
+
+      g_tipPos[count] = pos + (g_tipPos[count] - pos)/norm(g_tipPos[count] - pos) * g_furHeight;
+      g_tipVelocity[count] = (g_tipVelocity[count] + total_force * g_timeStep) * g_damping;
+      count += 1;
+    }
+  }
+
+  updateShellGeometry();
 
   // schedule this to get called again
   glutTimerFunc(1000/g_simulationsPerSecond, hairsSimulationCallback, 0);
@@ -402,12 +436,23 @@ static void hairsSimulationCallback(int dontCare) {
 
 // New function that initialize the dynamics simulation
 static void initSimulation() {
-  g_tipPos.resize(g_bunnyMesh.getNumVertices(), Cvec3(0));
+  g_tipPos.resize(3 * g_bunnyMesh.getNumFaces(), Cvec3(0));
   g_tipVelocity = g_tipPos;
 
   // TASK 1 TODO: initialize g_tipPos to "at-rest" hair tips in world coordinates
 
-  //...
+  g_tipPos.clear();
+
+  for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
+  
+    const Mesh::Face f = g_bunnyMesh.getFace(j);
+
+    g_tipPos.push_back(f.getVertex(0).getPosition() + (f.getVertex(0).getNormal() * g_furHeight));
+    g_tipPos.push_back(f.getVertex(1).getPosition() + (f.getVertex(1).getNormal() * g_furHeight));
+    g_tipPos.push_back(f.getVertex(2).getPosition() + (f.getVertex(2).getNormal() * g_furHeight));
+  }
+
+  updateShellGeometry();
 
   // Starts hair tip simulation
   hairsSimulationCallback(0);
@@ -949,6 +994,7 @@ static void specialKeyboard(const int key, const int x, const int y) {
     cerr << "hairyness = " << g_hairyness << std::endl;
     break;
   }
+  updateShellGeometry();
   glutPostRedisplay();
 }
 
@@ -1243,14 +1289,13 @@ static void initScene() {
                           new MyShapeNode(g_bunnyGeometry, g_bunnyMat)));
 
   // add each shell as shape node
-  //for (int i = 0; i < g_numShells; ++i) {
-  //  g_bunnyNode->addChild(shared_ptr<MyShapeNode>(
-  //                          new MyShapeNode(g_bunnyShellGeometries[i], g_bunnyShellMats[i])));
-  //}
+  for (int i = 0; i < g_numShells; ++i) {
+    g_bunnyNode->addChild(shared_ptr<MyShapeNode>(
+                            new MyShapeNode(g_bunnyShellGeometries[i], g_bunnyShellMats[i])));
+  }
   // from this point, calling g_bunnyShellGeometries[i]->upload(...) will change the
   // geometry of the ith layer of shell that gets drawn
 
-  
   g_world->addChild(g_skyNode);
   g_world->addChild(g_groundNode);
   g_world->addChild(g_robot1Node);

@@ -15,13 +15,7 @@ ifeq ($(OS), Darwin) # Assume OS X
   LDFLAGS += -framework GLUT -framework OpenGL
 endif
 
-ifdef OPT 
-  #turn on optimization
-  CXXFLAGS += -O2
-else 
-  #turn on debugging
-  CXXFLAGS += -g
-endif
+CXXFLAGS += -O2
 
 CXX = g++ 
 
