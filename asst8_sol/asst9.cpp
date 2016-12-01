@@ -383,6 +383,8 @@ static void updateShellGeometry() {
 
   std::vector<Cvec2> texCoord;
 
+  Cvec3 bunnyCoord = inv(getAccumPathRbt(g_world, g_bunnyNode));
+
   texCoord.push_back(Cvec2(0,0));
   texCoord.push_back(Cvec2(g_hairyness,0));
   texCoord.push_back(Cvec2(0,g_hairyness));
