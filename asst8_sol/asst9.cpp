@@ -383,7 +383,7 @@ static void updateShellGeometry() {
 
   std::vector<Cvec2> texCoord;
 
-  Cvec3 bunnyCoord = inv(getAccumPathRbt(g_world, g_bunnyNode));
+  Cvec3 bunnyCoord = inv(getPathAccumRbt(g_world, g_bunnyNode)).getTranslation();
 
   texCoord.push_back(Cvec2(0,0));
   texCoord.push_back(Cvec2(g_hairyness,0));
@@ -396,9 +396,10 @@ static void updateShellGeometry() {
     const Mesh::Face f = g_bunnyMesh.getFace(j);
 
     for (int k = 0; k < 3; ++k) {
+        Cvec3 p = f.getVertex(k).getPosition(); //+ bunnyCoord;
         Cvec3 n = f.getVertex(k).getNormal() * g_furHeight / g_numShells;
-        Cvec3 s = f.getVertex(k).getPosition() + n * g_numShells;
-        Cvec3 t = g_tipPos[count];
+        Cvec3 s = p + n * g_numShells;
+        Cvec3 t = g_tipPos[count] - bunnyCoord;
 
         Cvec3 d = (t - s) * 2 / g_numShells / (g_numShells - 1);
 
@@ -407,9 +408,7 @@ static void updateShellGeometry() {
 
         Cvec3 normal = normalize(point - prevPoint);
 
-
-
-        vert_vector[i].push_back(VertexPNX(f.getVertex(k).getPosition() + point, normal, texCoord[k]));
+        vert_vector[i].push_back(VertexPNX(p + point, normal, texCoord[k]));
         count += 1;
       }
     }
@@ -423,14 +422,17 @@ static void updateShellGeometry() {
 // every g_simulationsPerSecond times per second
 static void hairsSimulationCallback(int dontCare) {
 
+
+  Cvec3 bunnyCoord = inv(getPathAccumRbt(g_world, g_bunnyNode)).getTranslation();
+
   // TASK 2 TODO: wrte dynamics simulation code here as part of TASK2
-  for (int a = 0; a < g_numStepsPerFrame; a++) {
+  for (int a = 0; a < g_numStepsPerFrame * 10; a++) {
     int count = 0;
 
     for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
       const Mesh::Face f = g_bunnyMesh.getFace(j);
       for (int k = 0; k < 3; ++k) {
-        Cvec3 pos = f.getVertex(k).getPosition();
+        Cvec3 pos = f.getVertex(k).getPosition() + bunnyCoord;
         Cvec3 s = pos + (f.getVertex(k).getNormal() * g_furHeight);
 
         Cvec3 spring_force = (s - g_tipPos[count]) * g_stiffness;
