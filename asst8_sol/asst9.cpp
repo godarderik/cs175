@@ -135,9 +135,11 @@ static shared_ptr<SgRbtNode> g_skyNode, g_groundNode, g_robot1Node, g_robot2Node
 static shared_ptr<SgRbtNode> g_currentCameraNode;
 static shared_ptr<SgRbtNode> g_currentPickedRbtNode;
 
+bool g_shellNeedsUpdate = false;
+
 static const Cvec3 g_gravity(0, -0.5, 0);  // gavity vector
 static double g_timeStep = 0.02;
-static double g_numStepsPerFrame = 10;
+static double g_numStepsPerFrame = 1;
 static double g_damping = 0.96;
 static double g_stiffness = 4;
 static int g_simulationsPerSecond = 60;
@@ -330,11 +332,12 @@ static void initBunnyMeshes() {
   // section of spec
   // ...
 
-
   for (int i = 0; i < g_bunnyMesh.getNumVertices(); ++i) {
     const Mesh::Vertex v = g_bunnyMesh.getVertex(i);
+
     Mesh::VertexIterator it(v.getIterator()), it0(it);
     Cvec3 tempNormal = Cvec3(0,0,0);    
+
     do { tempNormal += it.getFace().getNormal();}                                        
     while (++it != it0);                                  // go around once the 1ring
     v.setNormal(normalize(tempNormal));
@@ -347,8 +350,6 @@ static void initBunnyMeshes() {
   verts.reserve(3 * g_bunnyMesh.getNumVertices());
   g_bunnyGeometry.reset(new SimpleGeometryPN());
 
-  int count = 0;
-
   for (int i = 0; i < g_bunnyMesh.getNumFaces(); ++i) {
     const Mesh::Face f = g_bunnyMesh.getFace(i);
     
@@ -356,9 +357,6 @@ static void initBunnyMeshes() {
     verts.push_back(VertexPN(f.getVertex(1).getPosition(), f.getVertex(1).getNormal()));
     verts.push_back(VertexPN(f.getVertex(2).getPosition(), f.getVertex(2).getNormal()));
   }
-
-  global_count = count;
-
 
   g_bunnyGeometry->upload(&verts[0], 3 * g_bunnyMesh.getNumFaces());
 
@@ -383,23 +381,38 @@ static vector<VertexPNX> vert_vector[g_numShells];
 static void updateShellGeometry() {
   // TASK 1 and 3 TODO: finish this function as part of Task 1 and Task 3
 
+  std::vector<Cvec2> texCoord;
+
+  texCoord.push_back(Cvec2(0,0));
+  texCoord.push_back(Cvec2(g_hairyness,0));
+  texCoord.push_back(Cvec2(0,g_hairyness));
+
   for (int i = 1; i < g_numShells; ++i) {
     int count = 0;
     vert_vector[i].clear();
     for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
     const Mesh::Face f = g_bunnyMesh.getFace(j);
 
-    float factor = (i*(i+1)/2.0)/((g_numShells-1)*(g_numShells)/2.0);
-    vert_vector[i].push_back(VertexPNX(f.getVertex(0).getPosition() + (g_tipPos[count] - f.getVertex(0).getPosition()) * factor, f.getVertex(0).getNormal(), Cvec2(0,0)));
-    count += 1;
-    vert_vector[i].push_back(VertexPNX(f.getVertex(1).getPosition() + (g_tipPos[count] - f.getVertex(1).getPosition()) * factor, f.getVertex(1).getNormal(), Cvec2(g_hairyness,0)));
-    count += 1;
-    vert_vector[i].push_back(VertexPNX(f.getVertex(2).getPosition() + (g_tipPos[count] - f.getVertex(2).getPosition()) * factor, f.getVertex(2).getNormal(), Cvec2(0,g_hairyness)));
-    count += 1;
-    
-  }
-  g_bunnyShellGeometries[i]->upload(&vert_vector[i][0], 3 * g_bunnyMesh.getNumFaces());
-}
+    for (int k = 0; k < 3; ++k) {
+        Cvec3 n = f.getVertex(k).getNormal() * g_furHeight / g_numShells;
+        Cvec3 s = f.getVertex(k).getPosition() + n * g_numShells;
+        Cvec3 t = g_tipPos[count];
+
+        Cvec3 d = (t - s) * 2 / g_numShells / (g_numShells - 1);
+
+        Cvec3 point = n*i + (d * (i - 1)*i/2.0);
+        Cvec3 prevPoint = n*(i-1) + (d * (i - 2)*(i-1)/2.0);
+
+        Cvec3 normal = normalize(point - prevPoint);
+
+
+
+        vert_vector[i].push_back(VertexPNX(f.getVertex(k).getPosition() + point, normal, texCoord[k]));
+        count += 1;
+      }
+    }
+    g_bunnyShellGeometries[i]->upload(&vert_vector[i][0], 3 * g_bunnyMesh.getNumFaces());
+  } 
   
 
 }
@@ -409,27 +422,27 @@ static void updateShellGeometry() {
 static void hairsSimulationCallback(int dontCare) {
 
   // TASK 2 TODO: wrte dynamics simulation code here as part of TASK2
+  for (int a = 0; a < g_numStepsPerFrame; a++) {
+    int count = 0;
 
-  int count = 0;
-  for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
-    const Mesh::Face f = g_bunnyMesh.getFace(j);
-    for (int k = 0; k < 3; ++k) {
-      Cvec3 pos = f.getVertex(k).getPosition();
-      Cvec3 s = pos + (f.getVertex(k).getNormal() * g_furHeight);
+    for (int j = 0; j < g_bunnyMesh.getNumFaces(); ++j) {
+      const Mesh::Face f = g_bunnyMesh.getFace(j);
+      for (int k = 0; k < 3; ++k) {
+        Cvec3 pos = f.getVertex(k).getPosition();
+        Cvec3 s = pos + (f.getVertex(k).getNormal() * g_furHeight);
 
-      Cvec3 spring_force = (s - g_tipPos[count]) * g_stiffness;
-      Cvec3 total_force = g_gravity + spring_force;
+        Cvec3 spring_force = (s - g_tipPos[count]) * g_stiffness;
+        Cvec3 total_force = g_gravity + spring_force;
 
-      g_tipPos[count] += g_tipVelocity[count] * g_timeStep;
+        g_tipPos[count] += g_tipVelocity[count] * g_timeStep;
 
-      g_tipPos[count] = pos + (g_tipPos[count] - pos)/norm(g_tipPos[count] - pos) * g_furHeight;
-      g_tipVelocity[count] = (g_tipVelocity[count] + total_force * g_timeStep) * g_damping;
-      count += 1;
+        g_tipPos[count] = pos + (g_tipPos[count] - pos)/norm(g_tipPos[count] - pos) * g_furHeight;
+        g_tipVelocity[count] = (g_tipVelocity[count] + total_force * g_timeStep) * g_damping;
+        count += 1;
+      }
     }
   }
-
-  updateShellGeometry();
-
+  g_shellNeedsUpdate = true;
   // schedule this to get called again
   glutTimerFunc(1000/g_simulationsPerSecond, hairsSimulationCallback, 0);
   glutPostRedisplay(); // signal redisplaying
@@ -453,7 +466,7 @@ static void initSimulation() {
     g_tipPos.push_back(f.getVertex(2).getPosition() + (f.getVertex(2).getNormal() * g_furHeight));
   }
 
-  updateShellGeometry();
+  g_shellNeedsUpdate = true;
 
   // Starts hair tip simulation
   hairsSimulationCallback(0);
@@ -535,6 +548,10 @@ static void drawStuff(bool picking) {
   if (!(g_mouseMClickButton || (g_mouseLClickButton && g_mouseRClickButton) || (g_mouseLClickButton && !g_mouseRClickButton && g_spaceDown)))
     updateArcballScale();
 
+  if (g_shellNeedsUpdate) {
+    updateShellGeometry();
+    g_shellNeedsUpdate = false;
+  }
   Uniforms uniforms;
 
   // build & send proj. matrix to vshader
